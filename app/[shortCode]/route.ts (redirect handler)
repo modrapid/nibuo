@@ -1,0 +1,38 @@
+import { createClient } from "@/lib/supabase/server";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ shortCode: string }> }
+) {
+  const { shortCode } = await params;
+  const supabase = await createClient();
+
+  const { data: link } = await supabase
+    .from("links")
+    .select("*")
+    .eq("short_code", shortCode)
+    .eq("is_active", true)
+    .single();
+
+  if (!link) {
+    return NextResponse.redirect(new URL("/not-found", req.url));
+  }
+
+  if (link.expires_at && new Date(link.expires_at) < new Date()) {
+    return NextResponse.redirect(new URL("/expired", req.url));
+  }
+
+  await supabase
+    .from("links")
+    .update({ clicks: link.clicks + 1 })
+    .eq("id", link.id);
+
+  await supabase.from("link_clicks").insert({
+    link_id: link.id,
+    user_agent: req.headers.get("user-agent"),
+    referrer: req.headers.get("referer"),
+  });
+
+  return NextResponse.redirect(link.original_url);
+}
