@@ -1,0 +1,30 @@
+"use client";
+
+import { useLinks } from "@/hooks/useLinks";
+import { ShortenerForm } from "@/components/features/shortener/ShortenerForm";
+import { RecentLinks } from "@/components/features/shortener/RecentLinks";
+
+export default function HomePage() {
+  const { links, loading, shorten, remove } = useLinks();
+
+  return (
+    <main className="min-h-screen py-16 px-4">
+      <div className="text-center mb-12">
+        <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 dark:text-white">
+          URL Shortener
+        </h1>
+        <p className="text-slate-500 dark:text-slate-400 mt-3">
+          Create compact, trackable links.
+        </p>
+      </div>
+
+      <ShortenerForm onShorten={shorten} />
+
+      {loading ? (
+        <p className="text-center text-slate-400 mt-10">Loading links...</p>
+      ) : (
+        <RecentLinks links={links} onDelete={remove} />
+      )}
+    </main>
+  );
+}
