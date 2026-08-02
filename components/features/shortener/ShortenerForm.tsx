@@ -1,0 +1,80 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+
+interface ShortenerFormProps {
+  onShorten: (url: string) => void;
+}
+
+export function ShortenerForm({ onShorten }: ShortenerFormProps) {
+  const [url, setUrl] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [customAlias, setCustomAlias] = useState("");
+  const [expiry, setExpiry] = useState("never");
+
+  const handleSubmit = () => {
+    if (!url.trim()) return;
+    onShorten(url.trim());
+    setUrl("");
+  };
+
+  return (
+    <div className="glass-card rounded-xl2 shadow-soft p-6 md:p-8 max-w-2xl mx-auto">
+      <input
+        type="url"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        placeholder="Paste your long URL here..."
+        className="w-full rounded-xl border border-slate-200 dark:border-slate-700
+                   bg-white/70 dark:bg-slate-800/60 px-4 py-3 text-slate-700
+                   dark:text-slate-100 placeholder:text-slate-400 outline-none
+                   focus:ring-2 focus:ring-brand transition"
+      />
+
+      {showAdvanced && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <input
+            type="text"
+            value={customAlias}
+            onChange={(e) => setCustomAlias(e.target.value)}
+            placeholder="Custom alias (optional)"
+            className="rounded-lg border border-slate-200 dark:border-slate-700
+                       bg-white/70 dark:bg-slate-800/60 px-3 py-2 text-sm outline-none
+                       focus:ring-2 focus:ring-brand"
+          />
+          <select
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+            className="rounded-lg border border-slate-200 dark:border-slate-700
+                       bg-white/70 dark:bg-slate-800/60 px-3 py-2 text-sm outline-none
+                       focus:ring-2 focus:ring-brand"
+          >
+            <option value="never">Never expire</option>
+            <option value="1d">1 Day</option>
+            <option value="7d">7 Days</option>
+            <option value="30d">30 Days</option>
+          </select>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-4">
+        <button
+          onClick={() => setShowAdvanced((s) => !s)}
+          className="flex items-center gap-1 text-sm font-medium text-slate-600
+                     dark:text-slate-300 hover:text-brand transition"
+        >
+          {showAdvanced ? <ChevronUp size={16} /> : "+"} Advanced Options
+        </button>
+
+        <button
+          onClick={handleSubmit}
+          className="bg-brand hover:bg-brand-light text-white font-semibold
+                     rounded-xl px-6 py-2.5 transition active:scale-95"
+        >
+          Shorten URL
+        </button>
+      </div>
+    </div>
+  );
+}
