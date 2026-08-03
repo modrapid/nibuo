@@ -1,5 +1,8 @@
-import { createHash } from "crypto";
-import { authorizeB2, getUploadUrl } from "./b2Client";
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 
 interface UploadResult {
   fileId: string;
@@ -14,83 +17,58 @@ interface StorageService {
   getDownloadUrl(fileName: string): string;
 }
 
-class BackblazeStorageService implements StorageService {
+function getS3Client(): S3Client {
+  return new S3Client({
+    endpoint: process.env.B2_ENDPOINT!,
+    region: "us-east-005",
+    credentials: {
+      accessKeyId: process.env.B2_KEY_ID!,
+      secretAccessKey: process.env.B2_APPLICATION_KEY!,
+    },
+    forcePathStyle: false,
+  });
+}
+
+class BackblazeS3StorageService implements StorageService {
   async upload(buffer: Buffer, fileName: string, mimeType: string): Promise<UploadResult> {
-    const auth = await authorizeB2();
-    const uploadInfo = await getUploadUrl(auth);
+    const client = getS3Client();
+    const bucketName = process.env.B2_BUCKET_NAME!;
 
-    const sha1 = createHash("sha1").update(buffer).digest("hex");
-
-    const res = await fetch(uploadInfo.uploadUrl, {
-      method: "POST",
-      headers: {
-        Authorization: uploadInfo.authorizationToken,
-        "X-Bz-File-Name": encodeURIComponent(fileName),
-        "Content-Type": mimeType,
-        "Content-Length": buffer.length.toString(),
-        "X-Bz-Content-Sha1": sha1,
-      },
-      body: buffer,
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Backblaze upload failed: ${errText}`);
-    }
-
-    const data = await res.json();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileName,
+        Body: buffer,
+        ContentType: mimeType,
+      })
+    );
 
     return {
-      fileId: data.fileId,
-      fileName: data.fileName,
+      fileId: fileName,
+      fileName,
       downloadUrl: this.getDownloadUrl(fileName),
       size: buffer.length,
     };
   }
 
   async delete(fileName: string): Promise<void> {
-    const auth = await authorizeB2();
+    const client = getS3Client();
+    const bucketName = process.env.B2_BUCKET_NAME!;
 
-    // First, get the fileId (B2 requires fileId + fileName to delete)
-    const listRes = await fetch(`${auth.apiUrl}/b2api/v3/b2_list_file_names`, {
-      method: "POST",
-      headers: {
-        Authorization: auth.authorizationToken,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        bucketId: auth.allowed.bucketId,
-        startFileName: fileName,
-        maxFileCount: 1,
-      }),
-    });
-
-    const listData = await listRes.json();
-    const file = listData.files?.[0];
-
-    if (!file || file.fileName !== fileName) {
-      return; // File not found, nothing to delete
-    }
-
-    await fetch(`${auth.apiUrl}/b2api/v3/b2_delete_file_version`, {
-      method: "POST",
-      headers: {
-        Authorization: auth.authorizationToken,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fileName: file.fileName,
-        fileId: file.fileId,
-      }),
-    });
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: fileName,
+      })
+    );
   }
 
   getDownloadUrl(fileName: string): string {
     const bucketName = process.env.B2_BUCKET_NAME!;
-    return `https://f000.backblazeb2.com/file/${bucketName}/${encodeURIComponent(fileName)}`;
+    const endpoint = process.env.B2_ENDPOINT!.replace("https://", "");
+    return `https://${bucketName}.${endpoint}/${encodeURIComponent(fileName)}`;
   }
 }
 
-// Singleton instance — reusable and future ready (swap implementation without touching callers)
-export const storageService: StorageService = new BackblazeStorageService();
+export const storageService: StorageService = new BackblazeS3StorageService();
 export type { StorageService, UploadResult };
