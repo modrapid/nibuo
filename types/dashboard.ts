@@ -5,6 +5,7 @@ export interface DashboardLink {
   original_url: string;
   downloads: number;
   views: number;
+  clicks: number;
   expires_at: string | null;
   created_at: string;
 }
