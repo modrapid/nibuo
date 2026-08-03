@@ -1,6 +1,16 @@
+export interface DashboardLink {
+  id: string;
+  short_code: string;
+  original_name: string;
+  downloads: number;
+  views: number;
+  expires_at: string | null;
+  created_at: string;
+}
+
 export interface DashboardStats {
   totalLinks: number;
-  totalViews: number;
-  totalDownloads: number;
-  storageUsed: number;
+  totalClicks: number;
+  activeLinks: number;
+  links: DashboardLink[];
 }
