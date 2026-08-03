@@ -5,7 +5,7 @@ export function Footer() {
     <footer className="border-t border-slate-200 dark:border-slate-800 py-10 px-4 mt-10">
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
         <div>
-          <p className="font-extrabold text-slate-900 dark:text-white">xbare.top</p>
+          <p className="font-extrabold text-slate-900 dark:text-white">Nibuo.com</p>
           <p className="text-sm text-slate-400 mt-1">Fast, secure file sharing.</p>
         </div>
 
@@ -16,7 +16,7 @@ export function Footer() {
           <Link href="/privacy" className="hover:text-brand transition">Privacy</Link>
         </div>
 
-        <p className="text-xs text-slate-400">© {new Date().getFullYear()} xbare.top</p>
+        <p className="text-xs text-slate-400">© {new Date().getFullYear()} Nibuo.com</p>
       </div>
     </footer>
   );
