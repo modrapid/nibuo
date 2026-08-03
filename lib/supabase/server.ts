@@ -13,9 +13,16 @@ export async function createClient() {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // Called from a Server Component (e.g. a page render).
+            // This is expected and safe to ignore — middleware.ts
+            // already handles refreshing the session cookie on
+            // every request, so we don't need to set it here too.
+          }
         },
       },
     }
