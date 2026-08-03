@@ -6,11 +6,11 @@ import { Footer } from "@/components/layout/Footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "xbare.top — Fast, Secure File Sharing",
+  title: "nibuo.com — Fast, Secure File Sharing",
   description: "Send files instantly with password protection, auto-expiry, and download tracking. No sign-up required.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://xbare.top"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://nibuo.com"),
   openGraph: {
-    title: "xbare.top — Fast, Secure File Sharing",
+    title: "nibuo.com — Fast, Secure File Sharing",
     description: "Send files instantly. No sign-up required.",
     type: "website",
   },
