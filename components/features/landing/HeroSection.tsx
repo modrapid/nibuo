@@ -6,7 +6,7 @@ export function HeroSection() {
     <section className="pt-20 pb-16 px-4 text-center">
       <span className="inline-flex items-center gap-2 text-xs font-medium bg-brand/10 text-brand
                        rounded-full px-3 py-1 mb-6">
-        <Zap size={14} /> Fast, secure file sharing
+        <Zap size={14} /> Fast, Secure file sharing
       </span>
 
       <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 dark:text-white leading-tight">
@@ -16,7 +16,7 @@ export function HeroSection() {
       </h1>
 
       <p className="text-slate-500 dark:text-slate-400 mt-5 max-w-xl mx-auto">
-        Drag, drop, and share — up to 1GB free. Password protection, expiry
+        Drag, drop, and share — up to 14GB free. Password protection, expiry
         control, and download tracking, all built in.
       </p>
 
