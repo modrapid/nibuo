@@ -21,7 +21,7 @@ export function Navbar({ user }: NavbarProps) {
   return (
     <nav className="flex items-center justify-between px-6 py-4 max-w-5xl mx-auto">
       <Link href="/" className="font-extrabold text-lg text-slate-900 dark:text-white">
-        xbare.top
+        Nibuo.com
       </Link>
 
       <div className="flex items-center gap-4 text-sm font-medium">
