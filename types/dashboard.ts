@@ -2,6 +2,7 @@ export interface DashboardLink {
   id: string;
   short_code: string;
   original_name: string;
+  original_url: string;
   downloads: number;
   views: number;
   expires_at: string | null;
