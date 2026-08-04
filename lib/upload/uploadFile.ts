@@ -10,39 +10,67 @@ interface UploadResponse {
   size: number;
 }
 
-export function uploadFile(file: File, options: UploadOptions = {}): Promise<UploadResponse> {
+function putToSignedUrl(uploadUrl: string, file: File, onProgress?: (percent: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    if (options.expiresIn) formData.append("expiresIn", options.expiresIn);
-    if (options.password) formData.append("password", options.password);
-
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload");
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
 
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && options.onProgress) {
-        const percent = Math.round((event.loaded / event.total) * 100);
-        options.onProgress(percent);
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
       }
     };
 
     xhr.onload = () => {
-      try {
-        const response = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(response.data);
-        } else {
-          reject(new Error(response.error ?? "Upload failed."));
-        }
-      } catch {
-        reject(new Error("Unexpected server response."));
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error("Upload to storage failed. Please try again."));
       }
     };
 
     xhr.onerror = () => reject(new Error("Network error during upload."));
-    xhr.onabort = () => reject(new Error("Upload cancelled."));
-
-    xhr.send(formData);
+    xhr.send(file);
   });
+}
+
+export async function uploadFile(file: File, options: UploadOptions = {}): Promise<UploadResponse> {
+  // Step 1: ask our server for a presigned upload URL + reserved short code
+  const initRes = await fetch("/api/upload/init", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName: file.name, mimeType: file.type, size: file.size }),
+  });
+
+  if (!initRes.ok) {
+    const data = await initRes.json().catch(() => ({}));
+    throw new Error(data.error ?? "Failed to start upload.");
+  }
+  const { data: initData } = await initRes.json();
+
+  // Step 2: upload the file bytes directly to storage — no server-side size limit
+  await putToSignedUrl(initData.uploadUrl, file, options.onProgress);
+
+  // Step 3: confirm completion and create the database record
+  const completeRes = await fetch("/api/upload/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      storedName: initData.storedName,
+      shortCode: initData.shortCode,
+      originalName: file.name,
+      mimeType: file.type,
+      expiresIn: options.expiresIn,
+      password: options.password,
+    }),
+  });
+
+  if (!completeRes.ok) {
+    const data = await completeRes.json().catch(() => ({}));
+    throw new Error(data.error ?? "Failed to save file record.");
+  }
+
+  const { data } = await completeRes.json();
+  return data;
 }
