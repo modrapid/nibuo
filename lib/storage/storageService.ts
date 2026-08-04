@@ -2,7 +2,9 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 interface UploadResult {
   fileId: string;
@@ -15,6 +17,7 @@ interface StorageService {
   upload(buffer: Buffer, fileName: string, mimeType: string): Promise<UploadResult>;
   delete(fileName: string): Promise<void>;
   getDownloadUrl(fileName: string): string;
+  getSignedDownloadUrl(fileName: string, expiresInSeconds?: number): Promise<string>;
 }
 
 function getS3Client(): S3Client {
@@ -63,10 +66,24 @@ class BackblazeS3StorageService implements StorageService {
     );
   }
 
+  // Stored in the DB for reference only — not directly browsable since the bucket is private.
   getDownloadUrl(fileName: string): string {
     const bucketName = process.env.B2_BUCKET_NAME!;
     const endpoint = process.env.B2_ENDPOINT!.replace("https://", "");
     return `https://${bucketName}.${endpoint}/${encodeURIComponent(fileName)}`;
+  }
+
+  // Generates a temporary, signed URL that works even on a private bucket.
+  async getSignedDownloadUrl(fileName: string, expiresInSeconds = 3600): Promise<string> {
+    const client = getS3Client();
+    const bucketName = process.env.B2_BUCKET_NAME!;
+
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: fileName,
+    });
+
+    return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
   }
 }
 
