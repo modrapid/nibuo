@@ -1,18 +1,21 @@
-export interface DashboardLink {
+export interface DashboardFile {
   id: string;
   short_code: string;
   original_name: string;
-  original_url: string;
-  downloads: number;
+  stored_name: string;
+  mime_type: string;
+  size_bytes: number;
   views: number;
-  clicks: number;
+  downloads: number;
+  is_active: boolean;
   expires_at: string | null;
   created_at: string;
 }
 
 export interface DashboardStats {
-  totalLinks: number;
-  totalClicks: number;
-  activeLinks: number;
-  links: DashboardLink[];
+  files: DashboardFile[];
+  totalFiles: number;
+  totalDownloads: number;
+  totalViews: number;
+  activeFiles: number;
 }
