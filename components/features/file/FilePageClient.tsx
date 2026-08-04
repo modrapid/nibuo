@@ -6,7 +6,6 @@ import { FilePreview } from "./FilePreview";
 import { QrCodeDisplay } from "./QrCodeDisplay";
 import { PasswordGate } from "./PasswordGate";
 import { ReportAbuseModal } from "@/components/features/link/ReportAbuseModal";
-import { registerFileDownload } from "@/actions/file.actions";
 import { formatBytes } from "@/lib/utils/formatBytes";
 import { getFileIcon } from "@/lib/utils/fileType";
 
@@ -28,17 +27,57 @@ interface FilePageClientProps {
 
 export function FilePageClient({ file, shareUrl }: FilePageClientProps) {
   const [unlocked, setUnlocked] = useState(!file.password_hash);
+  const [enteredPassword, setEnteredPassword] = useState<string | undefined>(undefined);
   const [showReport, setShowReport] = useState(false);
   const [downloads, setDownloads] = useState(file.downloads);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   if (!unlocked) {
-    return <PasswordGate shortCode={file.short_code} onUnlocked={() => setUnlocked(true)} />;
+    return (
+      <PasswordGate
+        shortCode={file.short_code}
+        onUnlocked={(password) => {
+          setEnteredPassword(password);
+          setUnlocked(true);
+        }}
+      />
+    );
   }
 
   const handleDownload = async () => {
-    setDownloads((d) => d + 1);
-    await registerFileDownload(file.short_code);
-    window.open(file.download_url, "_blank");
+    setDownloading(true);
+    setDownloadError(null);
+
+    try {
+      const res = await fetch(`/api/download/${file.short_code}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: enteredPassword }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Download failed. Please try again.");
+      }
+
+      const blob = await res.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = file.original_name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      setDownloads((d) => d + 1);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Download failed.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const copyLink = () => navigator.clipboard.writeText(shareUrl);
@@ -79,13 +118,16 @@ export function FilePageClient({ file, shareUrl }: FilePageClientProps) {
           </span>
         </div>
 
+        {downloadError && <p className="text-sm text-red-500 mt-3">{downloadError}</p>}
+
         <div className="flex flex-wrap items-center gap-3 mt-6">
           <button
             onClick={handleDownload}
+            disabled={downloading}
             className="flex items-center gap-2 bg-brand hover:bg-brand-light text-white
-                       font-semibold rounded-xl px-6 py-2.5 transition"
+                       font-semibold rounded-xl px-6 py-2.5 transition disabled:opacity-60"
           >
-            <Download size={16} /> Download
+            <Download size={16} /> {downloading ? "Preparing..." : "Download"}
           </button>
 
           <button
