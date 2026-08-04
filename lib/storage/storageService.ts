@@ -14,7 +14,7 @@ interface ObjectStreamResult {
 }
 
 interface StorageService {
-  upload(buffer: Buffer, fileName: string, mimeType: string): Promise<{ downloadUrl: string }>;
+  upload(buffer: Buffer, fileName: string, mimeType: string): Promise<{ fileName: string }>;
   delete(fileName: string): Promise<void>;
   getSignedDownloadUrl(fileName: string, expiresInSeconds?: number): Promise<string>;
   getSignedUploadUrl(fileName: string, mimeType: string, expiresInSeconds?: number): Promise<string>;
@@ -36,8 +36,10 @@ function getS3Client(): S3Client {
 
 class BackblazeS3StorageService implements StorageService {
   // Server-side upload: used by the /api/upload route which receives the file
-  // as a buffer and writes it directly to the bucket.
-  async upload(buffer: Buffer, fileName: string, mimeType: string): Promise<{ downloadUrl: string }> {
+  // as a buffer and writes it directly to the bucket. Does NOT return a
+  // download URL — signed URLs are short-lived, so they're generated fresh
+  // at download time via getSignedDownloadUrl(), not stored.
+  async upload(buffer: Buffer, fileName: string, mimeType: string): Promise<{ fileName: string }> {
     const client = getS3Client();
     await client.send(
       new PutObjectCommand({
@@ -47,8 +49,7 @@ class BackblazeS3StorageService implements StorageService {
         ContentType: mimeType,
       })
     );
-    const downloadUrl = await this.getSignedDownloadUrl(fileName);
-    return { downloadUrl };
+    return { fileName };
   }
 
   async delete(fileName: string): Promise<void> {
