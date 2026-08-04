@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDashboardStats } from "@/actions/dashboard.actions";
-import { deleteLink } from "@/actions/link.actions";
+import { getDashboardStats, deleteUserFile } from "@/actions/dashboard.actions";
 import { StatsCards } from "@/components/features/dashboard/StatsCards";
-import { DashboardLinkRow } from "@/components/features/dashboard/DashboardLinkRow";
+import { DashboardFileRow } from "@/components/features/dashboard/DashboardFileRow";
 import type { DashboardStats } from "@/types/dashboard";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -22,11 +22,11 @@ export default function DashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, storedName: string) => {
     setStats((prev) =>
-      prev ? { ...prev, links: prev.links.filter((l) => l.id !== id) } : prev
+      prev ? { ...prev, files: prev.files.filter((f) => f.id !== id) } : prev
     );
-    await deleteLink(id);
+    await deleteUserFile(id, storedName);
   };
 
   if (loading) {
@@ -44,22 +44,22 @@ export default function DashboardPage() {
       </h1>
 
       <StatsCards
-        totalLinks={stats.totalLinks}
-        totalClicks={stats.totalClicks}
-        activeLinks={stats.activeLinks}
+        totalFiles={stats.totalFiles}
+        totalDownloads={stats.totalDownloads}
+        totalViews={stats.totalViews}
+        activeFiles={stats.activeFiles}
       />
 
       <div className="max-w-4xl mx-auto flex flex-col gap-3">
-        {stats.links.length === 0 ? (
-          <p className="text-center text-slate-400">You haven&apos;t created any links yet.</p>
+        {stats.files.length === 0 ? (
+          <p className="text-center text-slate-400">You haven&apos;t uploaded any files yet.</p>
         ) : (
-          stats.links.map((link) => (
-            <DashboardLinkRow
-              key={link.id}
-              link={link}
-              domain={process.env.NEXT_PUBLIC_DOMAIN ?? "xbare.top"}
+          stats.files.map((file) => (
+            <DashboardFileRow
+              key={file.id}
+              file={file}
+              siteUrl={siteUrl}
               onDelete={handleDelete}
-              onRefresh={fetchStats}
             />
           ))
         )}
