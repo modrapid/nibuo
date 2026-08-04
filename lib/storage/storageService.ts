@@ -3,15 +3,9 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-
-interface UploadResult {
-  fileId: string;
-  fileName: string;
-  downloadUrl: string;
-  size: number;
-}
 
 interface ObjectStreamResult {
   body: ReadableStream<Uint8Array>;
@@ -20,9 +14,10 @@ interface ObjectStreamResult {
 }
 
 interface StorageService {
-  upload(buffer: Buffer, fileName: string, mimeType: string): Promise<UploadResult>;
   delete(fileName: string): Promise<void>;
   getSignedDownloadUrl(fileName: string, expiresInSeconds?: number): Promise<string>;
+  getSignedUploadUrl(fileName: string, mimeType: string, expiresInSeconds?: number): Promise<string>;
+  objectExists(fileName: string): Promise<{ exists: boolean; size?: number }>;
   getObjectStream(fileName: string): Promise<ObjectStreamResult>;
 }
 
@@ -39,71 +34,53 @@ function getS3Client(): S3Client {
 }
 
 class BackblazeS3StorageService implements StorageService {
-  async upload(buffer: Buffer, fileName: string, mimeType: string): Promise<UploadResult> {
-    const client = getS3Client();
-    const bucketName = process.env.B2_BUCKET_NAME!;
-
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucketName,
-        Key: fileName,
-        Body: buffer,
-        ContentType: mimeType,
-      })
-    );
-
-    return {
-      fileId: fileName,
-      fileName,
-      downloadUrl: "", // Not used directly anymore — see getSignedDownloadUrl / getObjectStream
-      size: buffer.length,
-    };
-  }
-
   async delete(fileName: string): Promise<void> {
     const client = getS3Client();
-    const bucketName = process.env.B2_BUCKET_NAME!;
-
     await client.send(
-      new DeleteObjectCommand({
-        Bucket: bucketName,
-        Key: fileName,
-      })
+      new DeleteObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
     );
   }
 
-  // Used ONLY for preview (<img>/<video>/<iframe> src). Short-lived, never stored permanently.
   async getSignedDownloadUrl(fileName: string, expiresInSeconds = 3600): Promise<string> {
     const client = getS3Client();
-    const bucketName = process.env.B2_BUCKET_NAME!;
-
     const command = new GetObjectCommand({
-      Bucket: bucketName,
+      Bucket: process.env.B2_BUCKET_NAME!,
       Key: fileName,
     });
-
     return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
   }
 
-  // Used for the secure download API route — streams the object through our own server,
-  // so the browser never sees or connects to the B2/S3 bucket at all.
+  // Client uploads directly to this URL — bypasses our server entirely, no size limit.
+  async getSignedUploadUrl(fileName: string, mimeType: string, expiresInSeconds = 600): Promise<string> {
+    const client = getS3Client();
+    const command = new PutObjectCommand({
+      Bucket: process.env.B2_BUCKET_NAME!,
+      Key: fileName,
+      ContentType: mimeType,
+    });
+    return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+  }
+
+  // Confirms the object actually landed in the bucket before we trust the client's "done" signal.
+  async objectExists(fileName: string): Promise<{ exists: boolean; size?: number }> {
+    const client = getS3Client();
+    try {
+      const res = await client.send(
+        new HeadObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
+      );
+      return { exists: true, size: res.ContentLength };
+    } catch {
+      return { exists: false };
+    }
+  }
+
   async getObjectStream(fileName: string): Promise<ObjectStreamResult> {
     const client = getS3Client();
-    const bucketName = process.env.B2_BUCKET_NAME!;
-
     const response = await client.send(
-      new GetObjectCommand({
-        Bucket: bucketName,
-        Key: fileName,
-      })
+      new GetObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
     );
-
-    if (!response.Body) {
-      throw new Error("Empty object body returned from storage.");
-    }
-
+    if (!response.Body) throw new Error("Empty object body returned from storage.");
     const body = await response.Body.transformToWebStream();
-
     return {
       body: body as ReadableStream<Uint8Array>,
       contentLength: response.ContentLength,
@@ -113,4 +90,4 @@ class BackblazeS3StorageService implements StorageService {
 }
 
 export const storageService: StorageService = new BackblazeS3StorageService();
-export type { StorageService, UploadResult };
+export type { StorageService };
