@@ -6,7 +6,7 @@ import { verifyFilePassword } from "@/actions/file.actions";
 
 interface PasswordGateProps {
   shortCode: string;
-  onUnlocked: () => void;
+  onUnlocked: (password: string) => void;
 }
 
 export function PasswordGate({ shortCode, onUnlocked }: PasswordGateProps) {
@@ -24,7 +24,7 @@ export function PasswordGate({ shortCode, onUnlocked }: PasswordGateProps) {
       setError(res.error);
       return;
     }
-    onUnlocked();
+    onUnlocked(password);
   };
 
   return (
