@@ -1,20 +1,22 @@
-import { Link2, MousePointerClick, Zap } from "lucide-react";
+import { FileText, DownloadCloud, Eye, Zap } from "lucide-react";
 
 interface StatsCardsProps {
-  totalLinks: number;
-  totalClicks: number;
-  activeLinks: number;
+  totalFiles: number;
+  totalDownloads: number;
+  totalViews: number;
+  activeFiles: number;
 }
 
-export function StatsCards({ totalLinks, totalClicks, activeLinks }: StatsCardsProps) {
+export function StatsCards({ totalFiles, totalDownloads, totalViews, activeFiles }: StatsCardsProps) {
   const stats = [
-    { label: "Total Links", value: totalLinks, icon: Link2 },
-    { label: "Total Clicks", value: totalClicks, icon: MousePointerClick },
-    { label: "Active Links", value: activeLinks, icon: Zap },
+    { label: "Total Files", value: totalFiles, icon: FileText },
+    { label: "Total Downloads", value: totalDownloads, icon: DownloadCloud },
+    { label: "Total Views", value: totalViews, icon: Eye },
+    { label: "Active Files", value: activeFiles, icon: Zap },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto mb-10">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto mb-10">
       {stats.map(({ label, value, icon: Icon }) => (
         <div key={label} className="glass-card rounded-xl2 shadow-soft p-5 flex items-center gap-4">
           <div className="bg-brand/10 text-brand rounded-xl p-3">
