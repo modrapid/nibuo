@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { storageService } from "@/lib/storage/storageService";
 import { checkRateLimit } from "@/lib/security/rateLimiter";
 import { getClientIp } from "@/lib/security/getClientIp";
 import { revalidatePath } from "next/cache";
@@ -20,7 +21,10 @@ export async function getFileByShortCode(shortCode: string) {
   const isExpired = file.expires_at && new Date(file.expires_at) < new Date();
   if (isExpired) return { error: "expired" };
 
-  return { data: file };
+  // Generate a fresh signed URL valid for 1 hour, since the bucket is private.
+  const signedUrl = await storageService.getSignedDownloadUrl(file.stored_name, 3600);
+
+  return { data: { ...file, download_url: signedUrl } };
 }
 
 export async function registerFileView(shortCode: string) {
