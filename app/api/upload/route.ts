@@ -12,7 +12,6 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   const ip = await getClientIp();
   const { allowed } = checkRateLimit(`upload:${ip}`, { limit: 10, windowMs: 60_000 });
-
   if (!allowed) {
     return NextResponse.json({ error: "Too many uploads. Please slow down." }, { status: 429 });
   }
@@ -35,7 +34,9 @@ export async function POST(req: NextRequest) {
   const secureFileName = generateSecureFilename(file.name);
 
   try {
-    const uploadResult = await storageService.upload(buffer, secureFileName, file.type);
+    // Just writes the object to the bucket — no signed URL generated here,
+    // since presigned URLs expire in ~1hr and shares can live up to 14 days.
+    await storageService.upload(buffer, secureFileName, file.type);
 
     const supabase = await createClient();
     const {
@@ -60,7 +61,6 @@ export async function POST(req: NextRequest) {
         stored_name: secureFileName,
         mime_type: file.type,
         size_bytes: file.size,
-        download_url: uploadResult.downloadUrl,
         expires_at: expiresAt,
         password_hash: password ?? null,
       })
