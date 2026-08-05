@@ -1,26 +1,17 @@
 import {
   S3Client,
-  PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-interface ObjectStreamResult {
-  body: ReadableStream<Uint8Array>;
-  contentLength?: number;
-  contentType?: string;
-}
-
-interface StorageService {
-  upload(buffer: Buffer, fileName: string, mimeType: string): Promise<{ fileName: string }>;
-  delete(fileName: string): Promise<void>;
-  getSignedDownloadUrl(fileName: string, expiresInSeconds?: number): Promise<string>;
-  getSignedUploadUrl(fileName: string, mimeType: string, expiresInSeconds?: number): Promise<string>;
-  objectExists(fileName: string): Promise<{ exists: boolean; size?: number }>;
-  getObjectStream(fileName: string): Promise<ObjectStreamResult>;
-}
+const MULTIPART_THRESHOLD = 8 * 1024 * 1024; // files >= 8MB use multipart
+const PART_SIZE = 8 * 1024 * 1024; // 8MB per part (B2 minimum part size is 5MB)
 
 function getS3Client(): S3Client {
   return new S3Client({
@@ -34,43 +25,31 @@ function getS3Client(): S3Client {
   });
 }
 
-class BackblazeS3StorageService implements StorageService {
-  // Server-side upload: used by the /api/upload route which receives the file
-  // as a buffer and writes it directly to the bucket. Does NOT return a
-  // download URL — signed URLs are short-lived, so they're generated fresh
-  // at download time via getSignedDownloadUrl(), not stored.
-  async upload(buffer: Buffer, fileName: string, mimeType: string): Promise<{ fileName: string }> {
-    const client = getS3Client();
-    await client.send(
-      new PutObjectCommand({
-        Bucket: process.env.B2_BUCKET_NAME!,
-        Key: fileName,
-        Body: buffer,
-        ContentType: mimeType,
-      })
-    );
-    return { fileName };
+interface MultipartInitResult {
+  uploadId: string;
+  partSize: number;
+  partCount: number;
+}
+
+interface DownloadUrlOptions {
+  expiresInSeconds?: number;
+  forceDownloadFilename?: string;
+  contentType?: string;
+}
+
+class StorageService {
+  getPartPlan(fileSize: number): { usesMultipart: boolean; partSize: number; partCount: number } {
+    if (fileSize < MULTIPART_THRESHOLD) {
+      return { usesMultipart: false, partSize: fileSize, partCount: 1 };
+    }
+    const partCount = Math.ceil(fileSize / PART_SIZE);
+    return { usesMultipart: true, partSize: PART_SIZE, partCount };
   }
 
-  async delete(fileName: string): Promise<void> {
-    const client = getS3Client();
-    await client.send(
-      new DeleteObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
-    );
-  }
-
-  async getSignedDownloadUrl(fileName: string, expiresInSeconds = 3600): Promise<string> {
-    const client = getS3Client();
-    const command = new GetObjectCommand({
-      Bucket: process.env.B2_BUCKET_NAME!,
-      Key: fileName,
-    });
-    return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
-  }
-
-  // Client uploads directly to this URL — bypasses our server entirely, no size limit.
+  // --- Single-shot upload (small files) ---
   async getSignedUploadUrl(fileName: string, mimeType: string, expiresInSeconds = 600): Promise<string> {
     const client = getS3Client();
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
     const command = new PutObjectCommand({
       Bucket: process.env.B2_BUCKET_NAME!,
       Key: fileName,
@@ -79,7 +58,72 @@ class BackblazeS3StorageService implements StorageService {
     return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
   }
 
-  // Confirms the object actually landed in the bucket before we trust the client's "done" signal.
+  // --- Multipart upload (large files) ---
+  async initMultipartUpload(fileName: string, mimeType: string, fileSize: number): Promise<MultipartInitResult> {
+    const client = getS3Client();
+    const { usesMultipart, partSize, partCount } = this.getPartPlan(fileSize);
+
+    if (!usesMultipart) {
+      throw new Error("File is below the multipart threshold; use single-shot upload instead.");
+    }
+
+    const result = await client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: fileName,
+        ContentType: mimeType,
+      })
+    );
+
+    if (!result.UploadId) throw new Error("Failed to initiate multipart upload.");
+
+    return { uploadId: result.UploadId, partSize, partCount };
+  }
+
+  async getSignedPartUrl(
+    fileName: string,
+    uploadId: string,
+    partNumber: number,
+    expiresInSeconds = 900
+  ): Promise<string> {
+    const client = getS3Client();
+    const command = new UploadPartCommand({
+      Bucket: process.env.B2_BUCKET_NAME!,
+      Key: fileName,
+      UploadId: uploadId,
+      PartNumber: partNumber,
+    });
+    return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+  }
+
+  async completeMultipartUpload(
+    fileName: string,
+    uploadId: string,
+    parts: { PartNumber: number; ETag: string }[]
+  ): Promise<void> {
+    const client = getS3Client();
+    await client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: fileName,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: parts },
+      })
+    );
+  }
+
+  async abortMultipartUpload(fileName: string, uploadId: string): Promise<void> {
+    const client = getS3Client();
+    await client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: fileName,
+        UploadId: uploadId,
+      })
+    );
+  }
+
+  // --- Post-upload verification ---
   async objectExists(fileName: string): Promise<{ exists: boolean; size?: number }> {
     const client = getS3Client();
     try {
@@ -92,20 +136,29 @@ class BackblazeS3StorageService implements StorageService {
     }
   }
 
-  async getObjectStream(fileName: string): Promise<ObjectStreamResult> {
+  // --- Download / preview ---
+  async getSignedDownloadUrl(fileName: string, options: DownloadUrlOptions = {}): Promise<string> {
     const client = getS3Client();
-    const response = await client.send(
-      new GetObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
+    const command = new GetObjectCommand({
+      Bucket: process.env.B2_BUCKET_NAME!,
+      Key: fileName,
+      ...(options.forceDownloadFilename && {
+        ResponseContentDisposition: `attachment; filename="${options.forceDownloadFilename.replace(
+          /["\\]/g,
+          ""
+        )}"`,
+      }),
+      ...(options.contentType && { ResponseContentType: options.contentType }),
+    });
+    return getSignedUrl(client, command, { expiresIn: options.expiresInSeconds ?? 300 });
+  }
+
+  async delete(fileName: string): Promise<void> {
+    const client = getS3Client();
+    await client.send(
+      new DeleteObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
     );
-    if (!response.Body) throw new Error("Empty object body returned from storage.");
-    const body = await response.Body.transformToWebStream();
-    return {
-      body: body as ReadableStream<Uint8Array>,
-      contentLength: response.ContentLength,
-      contentType: response.ContentType,
-    };
   }
 }
 
-export const storageService: StorageService = new BackblazeS3StorageService();
-export type { StorageService };
+export const storageService = new StorageService();
