@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDashboardStats, deleteUserFile } from "@/actions/dashboard.actions";
+import { getDashboardStats } from "@/actions/dashboard.actions";
 import { StatsCards } from "@/components/features/dashboard/StatsCards";
 import { DashboardFileRow } from "@/components/features/dashboard/DashboardFileRow";
 import type { DashboardStats } from "@/types/dashboard";
@@ -22,20 +22,14 @@ export default function DashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  const handleDelete = async (id: string, storedName: string) => {
-    setStats((prev) =>
-      prev ? { ...prev, files: prev.files.filter((f) => f.id !== id) } : prev
-    );
-    await deleteUserFile(id, storedName);
+  const handleDelete = async (id: string) => {
+    setStats((prev) => (prev ? { ...prev, files: prev.files.filter((f) => f.id !== id) } : prev));
+    const res = await fetch(`/api/files/${id}`, { method: "DELETE" });
+    if (!res.ok) fetchStats(); // rollback UI if the delete actually failed
   };
 
-  if (loading) {
-    return <p className="text-center text-slate-400 py-20">Loading dashboard...</p>;
-  }
-
-  if (!stats) {
-    return <p className="text-center text-slate-400 py-20">No data available.</p>;
-  }
+  if (loading) return <p className="text-center text-slate-400 py-20">Loading dashboard...</p>;
+  if (!stats) return <p className="text-center text-slate-400 py-20">No data available.</p>;
 
   return (
     <main className="min-h-screen py-16 px-4">
@@ -47,7 +41,7 @@ export default function DashboardPage() {
         totalFiles={stats.totalFiles}
         totalDownloads={stats.totalDownloads}
         totalViews={stats.totalViews}
-        activeFiles={stats.activeFiles}
+        totalStorageBytes={stats.totalStorageBytes}
       />
 
       <div className="max-w-4xl mx-auto flex flex-col gap-3">
@@ -55,12 +49,7 @@ export default function DashboardPage() {
           <p className="text-center text-slate-400">You haven&apos;t uploaded any files yet.</p>
         ) : (
           stats.files.map((file) => (
-            <DashboardFileRow
-              key={file.id}
-              file={file}
-              siteUrl={siteUrl}
-              onDelete={handleDelete}
-            />
+            <DashboardFileRow key={file.id} file={file} siteUrl={siteUrl} onDelete={handleDelete} onRefresh={fetchStats} />
           ))
         )}
       </div>
