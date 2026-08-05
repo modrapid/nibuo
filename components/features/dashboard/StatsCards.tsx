@@ -1,18 +1,19 @@
-import { FileText, DownloadCloud, Eye, Zap } from "lucide-react";
+import { FileText, DownloadCloud, Eye, HardDrive } from "lucide-react";
+import { formatBytes } from "@/lib/utils/formatBytes";
 
 interface StatsCardsProps {
   totalFiles: number;
   totalDownloads: number;
   totalViews: number;
-  activeFiles: number;
+  totalStorageBytes: number;
 }
 
-export function StatsCards({ totalFiles, totalDownloads, totalViews, activeFiles }: StatsCardsProps) {
+export function StatsCards({ totalFiles, totalDownloads, totalViews, totalStorageBytes }: StatsCardsProps) {
   const stats = [
     { label: "Total Files", value: totalFiles, icon: FileText },
     { label: "Total Downloads", value: totalDownloads, icon: DownloadCloud },
     { label: "Total Views", value: totalViews, icon: Eye },
-    { label: "Active Files", value: activeFiles, icon: Zap },
+    { label: "Storage Used", value: formatBytes(totalStorageBytes), icon: HardDrive },
   ];
 
   return (
