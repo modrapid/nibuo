@@ -16,6 +16,12 @@ const REGION = "us-east-005";
 const MULTIPART_THRESHOLD = 8 * 1024 * 1024;
 const PART_SIZE = 8 * 1024 * 1024;
 
+interface DownloadUrlOptions {
+  expiresInSeconds?: number;
+  forceDownloadFilename?: string;
+  contentType?: string;
+}
+
 const client = new S3Client({
   endpoint: process.env.B2_ENDPOINT!,
   region: REGION,
@@ -159,18 +165,27 @@ class StorageService {
 
   async getSignedDownloadUrl(
     key: string,
-    expires = 300
+    options: DownloadUrlOptions = {}
   ) {
-    return await getSignedUrl(
-      client,
-      new GetObjectCommand({
-        Bucket: process.env.B2_BUCKET_NAME!,
-        Key: key,
+    const command = new GetObjectCommand({
+      Bucket: process.env.B2_BUCKET_NAME!,
+      Key: key,
+
+      ...(options.forceDownloadFilename && {
+        ResponseContentDisposition: `attachment; filename="${options.forceDownloadFilename.replace(
+          /["\\]/g,
+          ""
+        )}"`,
       }),
-      {
-        expiresIn: expires,
-      }
-    );
+
+      ...(options.contentType && {
+        ResponseContentType: options.contentType,
+      }),
+    });
+
+    return await getSignedUrl(client, command, {
+      expiresIn: options.expiresInSeconds ?? 300,
+    });
   }
 
   async delete(key: string) {
