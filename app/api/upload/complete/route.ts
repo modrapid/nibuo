@@ -7,10 +7,13 @@ import { getClientIp } from "@/lib/security/getClientIp";
 export const runtime = "nodejs";
 
 interface CompleteBody {
+  mode: "single" | "multipart";
   storedName: string;
   shortCode: string;
   originalName: string;
   mimeType: string;
+  uploadId?: string;
+  parts?: { PartNumber: number; ETag: string }[];
   expiresIn?: "1d" | "3d" | "7d" | "14d";
   password?: string;
 }
@@ -27,7 +30,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid completion request." }, { status: 400 });
   }
 
-  // Verify the object actually landed in the bucket — never trust the client blindly.
+  if (body.mode === "multipart") {
+    if (!body.uploadId || !body.parts?.length) {
+      return NextResponse.json({ error: "Missing multipart completion data." }, { status: 400 });
+    }
+    try {
+      await storageService.completeMultipartUpload(body.storedName, body.uploadId, body.parts);
+    } catch (err) {
+      console.error("Multipart completion error:", err);
+      await storageService.abortMultipartUpload(body.storedName, body.uploadId).catch(() => {});
+      return NextResponse.json({ error: "Failed to finalize upload." }, { status: 500 });
+    }
+  }
+
   const check = await storageService.objectExists(body.storedName);
   if (!check.exists) {
     return NextResponse.json(
