@@ -11,13 +11,30 @@ export async function POST(
   { params }: { params: Promise<{ shortCode: string }> }
 ) {
   const { shortCode } = await params;
+
   const ip = await getClientIp();
-  const { allowed } = checkRateLimit(`download_url:${ip}:${shortCode}`, { limit: 20, windowMs: 60_000 });
+
+  const { allowed } = checkRateLimit(
+    `download_url:${ip}:${shortCode}`,
+    {
+      limit: 20,
+      windowMs: 60_000,
+    }
+  );
+
   if (!allowed) {
-    return NextResponse.json({ error: "Too many attempts. Please try again shortly." }, { status: 429 });
+    return NextResponse.json(
+      {
+        error: "Too many attempts. Please try again shortly.",
+      },
+      {
+        status: 429,
+      }
+    );
   }
 
   const body = await req.json().catch(() => ({}));
+
   const supabase = createServiceClient();
 
   const { data: file, error } = await supabase
@@ -27,26 +44,71 @@ export async function POST(
     .eq("is_active", true)
     .single();
 
-  if (error || !file) return NextResponse.json({ error: "File not found." }, { status: 404 });
-
-  if (file.expires_at && new Date(file.expires_at) < new Date()) {
-    return NextResponse.json({ error: "This file is no longer available." }, { status: 410 });
+  if (error || !file) {
+    return NextResponse.json(
+      {
+        error: "File not found.",
+      },
+      {
+        status: 404,
+      }
+    );
   }
 
-  if (file.password_hash && file.password_hash !== body.password) {
-    return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
+  if (
+    file.expires_at &&
+    new Date(file.expires_at) < new Date()
+  ) {
+    return NextResponse.json(
+      {
+        error: "This file is no longer available.",
+      },
+      {
+        status: 410,
+      }
+    );
   }
 
-  const signedUrl = await storageService.getSignedDownloadUrl(file.stored_name, {
-    expiresInSeconds: 300,
-    forceDownloadFilename: file.original_name,
-    contentType: file.mime_type,
+  if (
+    file.password_hash &&
+    file.password_hash !== body.password
+  ) {
+    return NextResponse.json(
+      {
+        error: "Incorrect password.",
+      },
+      {
+        status: 401,
+      }
+    );
+  }
+
+  const signedUrl =
+    await storageService.getSignedDownloadUrl(
+      file.stored_name,
+      {
+        expiresInSeconds: 300,
+        forceDownloadFilename: file.original_name,
+        contentType: file.mime_type,
+      }
+    );
+
+  supabase
+    .rpc("increment_file_downloads", {
+      p_file_id: file.id,
+    })
+    .then(
+      () => {},
+      (err) =>
+        console.error(
+          "Failed to increment download count:",
+          err
+        )
+    );
+
+  return NextResponse.json({
+    data: {
+      url: signedUrl,
+    },
   });
-
-  supabase.rpc("increment_file_downloads", { p_file_id: file.id }).then(
-    () => {},
-    (err) => console.error("Failed to increment download count:", err)
-  );
-
-  return NextResponse.json({ data: { url: signedUrl } });
 }
