@@ -3,160 +3,182 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
+
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const MULTIPART_THRESHOLD = 8 * 1024 * 1024; // files >= 8MB use multipart
-const PART_SIZE = 8 * 1024 * 1024; // 8MB per part (B2 minimum part size is 5MB)
+const REGION = "us-east-005";
+const MULTIPART_THRESHOLD = 8 * 1024 * 1024;
+const PART_SIZE = 8 * 1024 * 1024;
 
-function getS3Client(): S3Client {
-  return new S3Client({
-    endpoint: process.env.B2_ENDPOINT!,
-    region: "us-east-005",
-    credentials: {
-      accessKeyId: process.env.B2_KEY_ID!,
-      secretAccessKey: process.env.B2_APPLICATION_KEY!,
-    },
-    forcePathStyle: false,
-  });
-}
-
-interface MultipartInitResult {
-  uploadId: string;
-  partSize: number;
-  partCount: number;
-}
-
-interface DownloadUrlOptions {
-  expiresInSeconds?: number;
-  forceDownloadFilename?: string;
-  contentType?: string;
-}
+const client = new S3Client({
+  endpoint: process.env.B2_ENDPOINT!,
+  region: REGION,
+  credentials: {
+    accessKeyId: process.env.B2_KEY_ID!,
+    secretAccessKey: process.env.B2_APPLICATION_KEY!,
+  },
+  forcePathStyle: false,
+});
 
 class StorageService {
-  getPartPlan(fileSize: number): { usesMultipart: boolean; partSize: number; partCount: number } {
-    if (fileSize < MULTIPART_THRESHOLD) {
-      return { usesMultipart: false, partSize: fileSize, partCount: 1 };
+  getPartPlan(size: number) {
+    if (size < MULTIPART_THRESHOLD) {
+      return {
+        usesMultipart: false,
+        partSize: size,
+        partCount: 1,
+      };
     }
-    const partCount = Math.ceil(fileSize / PART_SIZE);
-    return { usesMultipart: true, partSize: PART_SIZE, partCount };
+
+    return {
+      usesMultipart: true,
+      partSize: PART_SIZE,
+      partCount: Math.ceil(size / PART_SIZE),
+    };
   }
 
-  // --- Single-shot upload (small files) ---
-  async getSignedUploadUrl(fileName: string, mimeType: string, expiresInSeconds = 600): Promise<string> {
-    const client = getS3Client();
-    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  async getSignedUploadUrl(
+    key: string,
+    mimeType: string,
+    expires = 900
+  ) {
     const command = new PutObjectCommand({
       Bucket: process.env.B2_BUCKET_NAME!,
-      Key: fileName,
+      Key: key,
       ContentType: mimeType,
     });
-    return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+
+    return await getSignedUrl(client, command, {
+      expiresIn: expires,
+    });
   }
 
-  // --- Multipart upload (large files) ---
-  async initMultipartUpload(fileName: string, mimeType: string, fileSize: number): Promise<MultipartInitResult> {
-    const client = getS3Client();
-    const { usesMultipart, partSize, partCount } = this.getPartPlan(fileSize);
-
-    if (!usesMultipart) {
-      throw new Error("File is below the multipart threshold; use single-shot upload instead.");
-    }
+  async initMultipartUpload(
+    key: string,
+    mimeType: string,
+    size: number
+  ) {
+    const plan = this.getPartPlan(size);
 
     const result = await client.send(
       new CreateMultipartUploadCommand({
         Bucket: process.env.B2_BUCKET_NAME!,
-        Key: fileName,
+        Key: key,
         ContentType: mimeType,
       })
     );
 
-    if (!result.UploadId) throw new Error("Failed to initiate multipart upload.");
+    if (!result.UploadId) {
+      throw new Error("Failed to create multipart upload.");
+    }
 
-    return { uploadId: result.UploadId, partSize, partCount };
+    return {
+      uploadId: result.UploadId,
+      partSize: plan.partSize,
+      partCount: plan.partCount,
+    };
   }
 
   async getSignedPartUrl(
-    fileName: string,
+    key: string,
     uploadId: string,
-    partNumber: number,
-    expiresInSeconds = 900
-  ): Promise<string> {
-    const client = getS3Client();
-    const command = new UploadPartCommand({
-      Bucket: process.env.B2_BUCKET_NAME!,
-      Key: fileName,
-      UploadId: uploadId,
-      PartNumber: partNumber,
-    });
-    return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+    partNumber: number
+  ) {
+    return await getSignedUrl(
+      client,
+      new UploadPartCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+      }),
+      {
+        expiresIn: 900,
+      }
+    );
   }
 
   async completeMultipartUpload(
-    fileName: string,
+    key: string,
     uploadId: string,
-    parts: { PartNumber: number; ETag: string }[]
-  ): Promise<void> {
-    const client = getS3Client();
+    parts: {
+      PartNumber: number;
+      ETag: string;
+    }[]
+  ) {
     await client.send(
       new CompleteMultipartUploadCommand({
         Bucket: process.env.B2_BUCKET_NAME!,
-        Key: fileName,
+        Key: key,
         UploadId: uploadId,
-        MultipartUpload: { Parts: parts },
+        MultipartUpload: {
+          Parts: parts,
+        },
       })
     );
   }
 
-  async abortMultipartUpload(fileName: string, uploadId: string): Promise<void> {
-    const client = getS3Client();
+  async abortMultipartUpload(
+    key: string,
+    uploadId: string
+  ) {
     await client.send(
       new AbortMultipartUploadCommand({
         Bucket: process.env.B2_BUCKET_NAME!,
-        Key: fileName,
+        Key: key,
         UploadId: uploadId,
       })
     );
   }
 
-  // --- Post-upload verification ---
-  async objectExists(fileName: string): Promise<{ exists: boolean; size?: number }> {
-    const client = getS3Client();
+  async objectExists(key: string) {
     try {
-      const res = await client.send(
-        new HeadObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
+      const result = await client.send(
+        new HeadObjectCommand({
+          Bucket: process.env.B2_BUCKET_NAME!,
+          Key: key,
+        })
       );
-      return { exists: true, size: res.ContentLength };
+
+      return {
+        exists: true,
+        size: result.ContentLength,
+      };
     } catch {
-      return { exists: false };
+      return {
+        exists: false,
+      };
     }
   }
 
-  // --- Download / preview ---
-  async getSignedDownloadUrl(fileName: string, options: DownloadUrlOptions = {}): Promise<string> {
-    const client = getS3Client();
-    const command = new GetObjectCommand({
-      Bucket: process.env.B2_BUCKET_NAME!,
-      Key: fileName,
-      ...(options.forceDownloadFilename && {
-        ResponseContentDisposition: `attachment; filename="${options.forceDownloadFilename.replace(
-          /["\\]/g,
-          ""
-        )}"`,
+  async getSignedDownloadUrl(
+    key: string,
+    expires = 300
+  ) {
+    return await getSignedUrl(
+      client,
+      new GetObjectCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: key,
       }),
-      ...(options.contentType && { ResponseContentType: options.contentType }),
-    });
-    return getSignedUrl(client, command, { expiresIn: options.expiresInSeconds ?? 300 });
+      {
+        expiresIn: expires,
+      }
+    );
   }
 
-  async delete(fileName: string): Promise<void> {
-    const client = getS3Client();
+  async delete(key: string) {
     await client.send(
-      new DeleteObjectCommand({ Bucket: process.env.B2_BUCKET_NAME!, Key: fileName })
+      new DeleteObjectCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: key,
+      })
     );
   }
 }
