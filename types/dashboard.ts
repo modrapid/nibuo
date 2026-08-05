@@ -7,6 +7,7 @@ export interface DashboardFile {
   size_bytes: number;
   views: number;
   downloads: number;
+  copies: number;
   is_active: boolean;
   expires_at: string | null;
   created_at: string;
@@ -18,4 +19,5 @@ export interface DashboardStats {
   totalDownloads: number;
   totalViews: number;
   activeFiles: number;
+  totalStorageBytes: number;
 }
