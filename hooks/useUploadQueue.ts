@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { uploadFile } from "@/lib/upload/uploadFile";
+import { uploadFile } from "@/lib/upload/multipartUploader";
 import type { UploadItem } from "@/types/upload";
 
 const MAX_CONCURRENT_UPLOADS = 3;
@@ -17,12 +17,15 @@ export function useUploadQueue() {
   const pendingQueue = useRef<string[]>([]);
 
   const updateItem = useCallback((id: string, patch: Partial<UploadItem>) => {
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+    setItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, ...patch } : i))
+    );
   }, []);
 
   const processQueue = useCallback(
     async (settings: UploadSettings) => {
       if (activeUploads.current >= MAX_CONCURRENT_UPLOADS) return;
+
       const nextId = pendingQueue.current.shift();
       if (!nextId) return;
 
@@ -31,22 +34,32 @@ export function useUploadQueue() {
 
       setItems((currentItems) => {
         const item = currentItems.find((i) => i.id === nextId);
+
         if (item) {
           uploadFile(item.file, {
             ...settings,
-            onProgress: (percent) => updateItem(nextId, { progress: percent }),
+            onProgress: (percent) =>
+              updateItem(nextId, { progress: percent }),
           })
             .then((res) => {
-              updateItem(nextId, { status: "success", progress: 100, shareUrl: res.shareUrl });
+              updateItem(nextId, {
+                status: "success",
+                progress: 100,
+                shareUrl: res.shareUrl,
+              });
             })
             .catch((err) => {
-              updateItem(nextId, { status: "error", error: err.message });
+              updateItem(nextId, {
+                status: "error",
+                error: err.message,
+              });
             })
             .finally(() => {
               activeUploads.current--;
               processQueue(settings);
             });
         }
+
         return currentItems;
       });
     },
@@ -74,17 +87,30 @@ export function useUploadQueue() {
 
   const removeItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
-    pendingQueue.current = pendingQueue.current.filter((qid) => qid !== id);
+    pendingQueue.current = pendingQueue.current.filter(
+      (queueId) => queueId !== id
+    );
   }, []);
 
   const retryItem = useCallback(
     (id: string, settings: UploadSettings = {}) => {
       pendingQueue.current.push(id);
-      updateItem(id, { status: "queued", progress: 0, error: undefined });
+
+      updateItem(id, {
+        status: "queued",
+        progress: 0,
+        error: undefined,
+      });
+
       processQueue(settings);
     },
     [processQueue, updateItem]
   );
 
-  return { items, addFiles, removeItem, retryItem };
+  return {
+    items,
+    addFiles,
+    removeItem,
+    retryItem,
+  };
 }
