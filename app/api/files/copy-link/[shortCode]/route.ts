@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServiceClient } from "@/lib/supabase/serviceClient";
+
+export const runtime = "nodejs";
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ shortCode: string }> }
+) {
+  const { shortCode } = await params;
+  const supabase = createServiceClient();
+
+  const { data: file } = await supabase.from("files").select("id").eq("short_code", shortCode).single();
+  if (!file) return NextResponse.json({ error: "File not found." }, { status: 404 });
+
+  const { error } = await supabase.rpc("increment_file_copies", { p_file_id: file.id });
+  if (error) console.error("Failed to increment copy count:", error);
+
+  return NextResponse.json({ data: { success: true } });
+}
