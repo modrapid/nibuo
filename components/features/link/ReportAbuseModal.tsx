@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { X, Flag } from "lucide-react";
-import { submitReport } from "@/actions/report.actions";
 
 interface ReportAbuseModalProps {
   shortCode: string;
@@ -17,16 +16,32 @@ export function ReportAbuseModal({ shortCode, onClose }: ReportAbuseModalProps) 
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async () => {
-    setLoading(true);
-    setError(null);
-    const res = await submitReport(shortCode, reason, email);
-    setLoading(false);
-
-    if (res.error) {
-      setError(res.error);
+    if (!reason.trim()) {
+      setError("Please describe the issue.");
       return;
     }
-    setSubmitted(true);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/files/report/${shortCode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, email }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to submit report.");
+      }
+
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -43,14 +58,14 @@ export function ReportAbuseModal({ shortCode, onClose }: ReportAbuseModalProps) 
 
         {submitted ? (
           <p className="text-sm text-center text-slate-500 dark:text-slate-400 py-4">
-            Thank you. Our team will review this link shortly.
+            Thank you. Our team will review this file shortly.
           </p>
         ) : (
           <div className="flex flex-col gap-3">
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Describe the issue (spam, phishing, illegal content...)"
+              placeholder="Describe the issue (spam, copyright, illegal content...)"
               rows={4}
               className="w-full rounded-lg border border-slate-200 dark:border-slate-700
                          bg-white/70 dark:bg-slate-800/60 px-3 py-2 text-sm outline-none
@@ -81,4 +96,4 @@ export function ReportAbuseModal({ shortCode, onClose }: ReportAbuseModalProps) 
       </div>
     </div>
   );
-        }
+}
