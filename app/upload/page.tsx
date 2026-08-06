@@ -7,12 +7,18 @@ import { UploadSettings } from "@/components/features/upload/UploadSettings";
 import { useUploadQueue } from "@/hooks/useUploadQueue";
 
 export default function UploadPage() {
-  const { items, addFiles, removeItem, retryItem } = useUploadQueue();
+  const { items, addFiles, removeItem, retryItem, cancelItem } = useUploadQueue();
   const [expiresIn, setExpiresIn] = useState<"1d" | "3d" | "7d" | "14d">("7d");
   const [password, setPassword] = useState("");
 
+  const currentSettings = { expiresIn, password: password.trim() || undefined };
+
   const handleFilesSelected = (files: File[]) => {
-    addFiles(files, { expiresIn, password: password.trim() || undefined });
+    addFiles(files, currentSettings);
+  };
+
+  const handleRetry = (id: string) => {
+    retryItem(id, currentSettings);
   };
 
   return (
@@ -33,7 +39,7 @@ export default function UploadPage() {
         onExpiryChange={setExpiresIn}
         onPasswordChange={setPassword}
       />
-      <UploadQueueList items={items} onRemove={removeItem} onRetry={retryItem} />
+      <UploadQueueList items={items} onRemove={removeItem} onRetry={handleRetry} onCancel={cancelItem} />
     </main>
   );
 }
