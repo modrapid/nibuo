@@ -14,30 +14,32 @@ export async function POST(req: NextRequest) {
   });
 
   if (!allowed) {
-    return NextResponse.json(
-      { error: "Too many requests." },
-      { status: 429 }
-    );
+    return NextResponse.json({ error: "Too many requests." }, { status: 429 });
   }
 
   const body = await req.json().catch(() => null);
 
-  if (!body?.storedName || !body?.uploadId || !body?.partNumber) {
-    return NextResponse.json(
-      { error: "Invalid part signing request." },
-      { status: 400 }
-    );
+  if (
+    !body?.storedName ||
+    typeof body.storedName !== "string" ||
+    !body?.uploadId ||
+    typeof body.uploadId !== "string" ||
+    typeof body.partNumber !== "number" ||
+    !Number.isInteger(body.partNumber) ||
+    body.partNumber < 1 ||
+    body.partNumber > 10_000
+  ) {
+    return NextResponse.json({ error: "Invalid part signing request." }, { status: 400 });
   }
 
-  const url = await storageService.getSignedPartUrl(
-    body.storedName,
-    body.uploadId,
-    body.partNumber
-  );
+  try {
+    const url = await storageService.getSignedPartUrl(body.storedName, body.uploadId, body.partNumber);
 
-  return NextResponse.json({
-    data: {
-      url,
-    },
-  });
+    return NextResponse.json({
+      data: { url },
+    });
+  } catch (err) {
+    console.error("Part signing error:", err);
+    return NextResponse.json({ error: "Failed to sign upload part." }, { status: 500 });
+  }
 }
