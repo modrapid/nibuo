@@ -1,6 +1,6 @@
 "use client";
 
-import { X, RotateCcw, CheckCircle2, AlertCircle, Copy, FileIcon } from "lucide-react";
+import { X, RotateCcw, CheckCircle2, AlertCircle, Copy, FileIcon, Ban } from "lucide-react";
 import { formatBytes } from "@/lib/utils/formatBytes";
 import type { UploadItem } from "@/types/upload";
 
@@ -8,9 +8,10 @@ interface UploadQueueListProps {
   items: UploadItem[];
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
+  onCancel: (id: string) => void;
 }
 
-export function UploadQueueList({ items, onRemove, onRetry }: UploadQueueListProps) {
+export function UploadQueueList({ items, onRemove, onRetry, onCancel }: UploadQueueListProps) {
   if (items.length === 0) return null;
 
   const copyLink = (shareUrl: string) => {
@@ -30,24 +31,36 @@ export function UploadQueueList({ items, onRemove, onRetry }: UploadQueueListPro
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
                 {item.file.name}
               </p>
-              <p className="text-xs text-slate-400">{formatBytes(item.file.size)}</p>
+              <p className="text-xs text-slate-400">
+                {item.status === "uploading"
+                  ? `${formatBytes(item.bytesUploaded)} / ${formatBytes(item.totalBytes)}`
+                  : formatBytes(item.file.size)}
+              </p>
             </div>
 
             {item.status === "uploading" && (
-              <span className="text-xs text-slate-500 whitespace-nowrap">{item.progress}%</span>
+              <>
+                <span className="text-xs text-slate-500 whitespace-nowrap">{item.progress}%</span>
+                <button onClick={() => onCancel(item.id)} className="text-slate-400 hover:text-red-500">
+                  <Ban size={16} />
+                </button>
+              </>
             )}
+
             {item.status === "success" && (
               <button onClick={() => copyLink(item.shareUrl!)} className="text-slate-400 hover:text-brand">
                 <Copy size={16} />
               </button>
             )}
             {item.status === "success" && <CheckCircle2 size={18} className="text-green-500" />}
-            {item.status === "error" && (
+
+            {(item.status === "error" || item.status === "cancelled") && (
               <button onClick={() => onRetry(item.id)} className="text-slate-400 hover:text-brand">
                 <RotateCcw size={16} />
               </button>
             )}
             {item.status === "error" && <AlertCircle size={18} className="text-red-500" />}
+            {item.status === "cancelled" && <Ban size={18} className="text-slate-400" />}
 
             <button onClick={() => onRemove(item.id)} className="text-slate-400 hover:text-red-500">
               <X size={16} />
@@ -65,6 +78,10 @@ export function UploadQueueList({ items, onRemove, onRetry }: UploadQueueListPro
 
           {item.status === "error" && (
             <p className="text-xs text-red-500 mt-2">{item.error}</p>
+          )}
+
+          {item.status === "cancelled" && (
+            <p className="text-xs text-slate-400 mt-2">Upload cancelled.</p>
           )}
 
           {item.status === "success" && (
