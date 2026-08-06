@@ -100,7 +100,9 @@ export async function getReports(status?: string) {
   await requireAdmin();
   const supabase = await createClient();
 
-  let query = supabase.from("reports").select("*, links(short_code, original_url)");
+  let query = supabase
+    .from("reports")
+    .select("*, links(short_code, original_url), files(short_code, original_name)");
   if (status) query = query.eq("status", status);
 
   const { data, error } = await query.order("created_at", { ascending: false });
