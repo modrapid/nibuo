@@ -18,6 +18,15 @@ interface CompleteBody {
   password?: string;
 }
 
+function computeExpiresAt(expiresIn?: CompleteBody["expiresIn"]): string | null {
+  if (!expiresIn) return null;
+  const days = { "1d": 1, "3d": 3, "7d": 7, "14d": 14 }[expiresIn];
+  if (!days) return null;
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
 export async function POST(req: NextRequest) {
   const ip = await getClientIp();
   const { allowed } = checkRateLimit(`upload_complete:${ip}`, { limit: 20, windowMs: 60_000 });
@@ -25,8 +34,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Too many uploads. Please slow down." }, { status: 429 });
   }
 
-  const body: CompleteBody = await req.json().catch(() => null);
-  if (!body?.storedName || !body?.shortCode || !body?.originalName || !body?.mimeType) {
+  const body: CompleteBody | null = await req.json().catch(() => null);
+  if (
+    !body?.storedName ||
+    !body?.shortCode ||
+    !body?.originalName ||
+    !body?.mimeType ||
+    (body.mode !== "single" && body.mode !== "multipart")
+  ) {
     return NextResponse.json({ error: "Invalid completion request." }, { status: 400 });
   }
 
@@ -34,11 +49,39 @@ export async function POST(req: NextRequest) {
     if (!body.uploadId || !body.parts?.length) {
       return NextResponse.json({ error: "Missing multipart completion data." }, { status: 400 });
     }
+
+    const hasValidParts = body.parts.every(
+      (p) => typeof p?.PartNumber === "number" && typeof p?.ETag === "string" && p.ETag.length > 0
+    );
+    if (!hasValidParts) {
+      return NextResponse.json({ error: "One or more parts are missing an ETag." }, { status: 400 });
+    }
+
     try {
       await storageService.completeMultipartUpload(body.storedName, body.uploadId, body.parts);
     } catch (err) {
       console.error("Multipart completion error:", err);
       await storageService.abortMultipartUpload(body.storedName, body.uploadId).catch(() => {});
+
+      const code = (err as { Code?: string; name?: string })?.Code || (err as { name?: string })?.name || "";
+      if (/NoSuchUpload/i.test(code)) {
+        return NextResponse.json(
+          { error: "This upload session expired or was already completed/aborted." },
+          { status: 410 }
+        );
+      }
+      if (/InvalidPart/i.test(code)) {
+        return NextResponse.json(
+          { error: "One or more parts don't match what Backblaze B2 received. Please retry the upload." },
+          { status: 409 }
+        );
+      }
+      if (/EntityTooSmall/i.test(code)) {
+        return NextResponse.json(
+          { error: "A part was smaller than the minimum allowed size." },
+          { status: 400 }
+        );
+      }
       return NextResponse.json({ error: "Failed to finalize upload." }, { status: 500 });
     }
   }
@@ -56,12 +99,7 @@ export async function POST(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let expiresAt: string | null = null;
-  const now = new Date();
-  if (body.expiresIn === "1d") expiresAt = new Date(now.setDate(now.getDate() + 1)).toISOString();
-  if (body.expiresIn === "3d") expiresAt = new Date(now.setDate(now.getDate() + 3)).toISOString();
-  if (body.expiresIn === "7d") expiresAt = new Date(now.setDate(now.getDate() + 7)).toISOString();
-  if (body.expiresIn === "14d") expiresAt = new Date(now.setDate(now.getDate() + 14)).toISOString();
+  const expiresAt = computeExpiresAt(body.expiresIn);
 
   const { data: fileRecord, error } = await supabase
     .from("files")
@@ -80,7 +118,7 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) {
-    await storageService.delete(body.storedName);
+    await storageService.delete(body.storedName).catch(() => {});
     return NextResponse.json({ error: "Failed to save file record." }, { status: 500 });
   }
 
