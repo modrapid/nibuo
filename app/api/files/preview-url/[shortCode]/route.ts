@@ -31,6 +31,13 @@ export async function POST(
     expiresInSeconds: 3600,
   });
 
+  supabase
+    .rpc("increment_file_views", { p_file_id: file.id })
+    .then(
+      () => {},
+      (err) => console.error("Failed to increment view count:", err)
+    );
+
   return NextResponse.json({
     data: {
       url: signedUrl,
