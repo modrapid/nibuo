@@ -10,6 +10,7 @@ interface FilePreviewProps {
   fileName: string;
 }
 
+// ফাইল প্রিভিউ কম্পোনেন্ট (ইমেজ, ভিডিও, অডিও, পিডিএফ এবং টেক্সট সাপোর্টেড)
 export function FilePreview({ mimeType, downloadUrl, fileName }: FilePreviewProps) {
   const kind = getPreviewKind(mimeType, fileName);
   const [imageFailed, setImageFailed] = useState(false);
@@ -37,6 +38,7 @@ export function FilePreview({ mimeType, downloadUrl, fileName }: FilePreviewProp
     };
   }, [kind, downloadUrl]);
 
+  // প্রিভিউ অনুপস্থিত থাকলে ফলব্যাক ভিউ
   const Fallback = () => (
     <div className="rounded-xl bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center py-16 gap-3">
       <span className="text-4xl">{getFileIcon(mimeType)}</span>
@@ -47,6 +49,7 @@ export function FilePreview({ mimeType, downloadUrl, fileName }: FilePreviewProp
     </div>
   );
 
+  // ইমেজ ফাইল প্রিভিউ
   if (kind === "image" && !imageFailed) {
     return (
       <div className="rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center max-h-96">
@@ -61,14 +64,22 @@ export function FilePreview({ mimeType, downloadUrl, fileName }: FilePreviewProp
     );
   }
 
+  // ভিডিও ফাইল প্রিভিউ (Cloudflare Worker Stream Compatible)
   if (kind === "video") {
     return (
-      <video controls preload="metadata" className="w-full rounded-xl max-h-96 bg-black">
+      <video 
+        controls 
+        preload="metadata" 
+        playsInline
+        className="w-full rounded-xl max-h-96 bg-black"
+      >
         <source src={downloadUrl} type={mimeType} />
+        আপনার ব্রাউজারে ভিডিও চালানো যাচ্ছে না।
       </video>
     );
   }
 
+  // অডিও ফাইল প্রিভিউ
   if (kind === "audio") {
     return (
       <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-6 flex flex-col items-center gap-4">
@@ -80,6 +91,7 @@ export function FilePreview({ mimeType, downloadUrl, fileName }: FilePreviewProp
     );
   }
 
+  // পিডিএফ ফাইল প্রিভিউ
   if (kind === "pdf") {
     return (
       <iframe
@@ -90,6 +102,7 @@ export function FilePreview({ mimeType, downloadUrl, fileName }: FilePreviewProp
     );
   }
 
+  // টেক্সট/কোড ফাইল প্রিভিউ
   if (kind === "text") {
     if (textError) return <Fallback />;
     return (
