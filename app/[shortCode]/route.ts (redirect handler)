@@ -1,13 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
+// শর্ট কোড দিয়ে রিডাইরেক্ট করার রুট হ্যান্ডলার
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ shortCode: string }> }
+  props: { params: Promise<{ shortCode: string }> }
 ) {
-  const { shortCode } = await params;
+  const { shortCode } = await props.params;
   const supabase = await createClient();
 
+  // ১. Supabase এর 'links' টেবিল থেকে ডেটা অনুসন্ধান
   const { data: link } = await supabase
     .from("links")
     .select("*")
@@ -15,24 +17,29 @@ export async function GET(
     .eq("is_active", true)
     .single();
 
+  // লিংক না পাওয়া গেলে ৪-নট-ফাউন্ড পেজে রিডাইরেক্ট
   if (!link) {
     return NextResponse.redirect(new URL("/not-found", req.url));
   }
 
+  // মেয়াাদ শেষ হয়ে গেলে এক্সপায়ার্ড পেজে রিডাইরেক্ট
   if (link.expires_at && new Date(link.expires_at) < new Date()) {
     return NextResponse.redirect(new URL("/expired", req.url));
   }
 
+  // ২. ক্লিকে সংখ্যা বৃদ্ধি আপডেট
   await supabase
     .from("links")
-    .update({ clicks: link.clicks + 1 })
+    .update({ clicks: (link.clicks || 0) + 1 })
     .eq("id", link.id);
 
+  // ৩. ক্লিক এনালাইটিক্স ইনসার্ট
   await supabase.from("link_clicks").insert({
     link_id: link.id,
     user_agent: req.headers.get("user-agent"),
     referrer: req.headers.get("referer"),
   });
 
+  // ৪. মূল ইউআরএল (Original URL)-এ রিডাইরেক্ট
   return NextResponse.redirect(link.original_url);
 }
