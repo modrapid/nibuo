@@ -31,6 +31,7 @@ export default function AdminSettingsPage() {
     { key: "site_name", label: "Website Name" },
     { key: "max_links_per_user", label: "Max Links Per User" },
     { key: "default_expiry", label: "Default Expiry (never, 1d, 7d, 30d)" },
+    { key: "token_lifetime_seconds", label: "Password Access Token Lifetime (seconds)" },
   ];
 
   return (
