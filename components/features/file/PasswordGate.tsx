@@ -5,7 +5,7 @@ import { Lock } from "lucide-react";
 
 interface PasswordGateProps {
   shortCode: string;
-  onUnlocked: (password: string) => void;
+  onUnlocked: (token: string) => void;
 }
 
 export function PasswordGate({ shortCode, onUnlocked }: PasswordGateProps) {
@@ -18,26 +18,27 @@ export function PasswordGate({ shortCode, onUnlocked }: PasswordGateProps) {
     setError(null);
 
     try {
-      const res = await fetch(`/api/files/preview-url/${shortCode}`, {
+      const cdnUrl = process.env.NEXT_PUBLIC_CDN_URL;
+      const res = await fetch(`${cdnUrl}/auth/${shortCode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
+
+      const data = await res.json().catch(() => ({}));
 
       if (res.status === 401) {
         setError("Incorrect password.");
         setLoading(false);
         return;
       }
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token) {
         setError(data.error ?? "Something went wrong. Please try again.");
         setLoading(false);
         return;
       }
 
-      onUnlocked(password);
+      onUnlocked(data.token);
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
