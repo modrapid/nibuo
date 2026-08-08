@@ -10,7 +10,6 @@ import { formatBytes } from "@/lib/utils/formatBytes";
 import { getFileIcon } from "@/lib/utils/fileType";
 
 interface FileMeta {
-  url: string;
   original_name: string;
   mime_type: string;
   size_bytes: number;
@@ -19,7 +18,7 @@ interface FileMeta {
   views: number;
   downloads: number;
   short_code: string;
-  password_hash: string | null;
+  passwordProtected: boolean;
 }
 
 interface FilePageClientProps {
@@ -27,54 +26,41 @@ interface FilePageClientProps {
   shareUrl: string;
 }
 
+const CDN_URL = process.env.NEXT_PUBLIC_CDN_URL;
+
 export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
   const [file, setFile] = useState<FileMeta | null>(null);
   const [needsPassword, setNeedsPassword] = useState(false);
-  const [enteredPassword, setEnteredPassword] = useState<string | undefined>(undefined);
+  const [token, setToken] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [expired, setExpired] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [downloads, setDownloads] = useState(0);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchPreview = async (password?: string) => {
-    setLoading(true);
-    const res = await fetch(`/api/files/preview-url/${shortCode}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-
-    if (res.status === 401) {
-      setNeedsPassword(true);
-      setLoading(false);
-      return;
-    }
-    if (res.status === 410) {
-      setExpired(true);
-      setLoading(false);
-      return;
-    }
-    if (!res.ok) {
-      setNotFound(true);
-      setLoading(false);
-      return;
-    }
-
-    const { data } = await res.json();
-    setFile(data);
-    setDownloads(data.downloads);
-    setNeedsPassword(false);
-    setLoading(false);
-
-    fetch(`/api/files/view/${shortCode}`, { method: "POST" }).catch(() => {});
-  };
-
   useEffect(() => {
-    fetchPreview();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetch(`/api/files/meta/${shortCode}`)
+      .then(async (res) => {
+        if (res.status === 410) {
+          setExpired(true);
+          setLoading(false);
+          return;
+        }
+        if (!res.ok) {
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
+        const { data } = await res.json();
+        setFile(data);
+        setDownloads(data.downloads);
+        setNeedsPassword(data.passwordProtected);
+        setLoading(false);
+      })
+      .catch(() => {
+        setNotFound(true);
+        setLoading(false);
+      });
   }, [shortCode]);
 
   if (loading) {
@@ -104,13 +90,13 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
     );
   }
 
-  if (needsPassword) {
+  if (needsPassword && !token) {
     return (
       <PasswordGate
         shortCode={shortCode}
-        onUnlocked={(password) => {
-          setEnteredPassword(password);
-          fetchPreview(password);
+        onUnlocked={(newToken) => {
+          setToken(newToken);
+          setNeedsPassword(false);
         }}
       />
     );
@@ -118,35 +104,9 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
 
   if (!file) return null;
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    setDownloadError(null);
-    try {
-      const res = await fetch(`/api/files/download-url/${shortCode}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: enteredPassword }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Download failed.");
-      }
-      const { data } = await res.json();
-
-      const link = document.createElement("a");
-      link.href = data.url;
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      setDownloads((d) => d + 1);
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Download failed.");
-    } finally {
-      setDownloading(false);
-    }
-  };
+  const tokenSuffix = token ? `?token=${encodeURIComponent(token)}` : "";
+  const previewUrl = `${CDN_URL}/p/${shortCode}${tokenSuffix}`;
+  const downloadHref = `${CDN_URL}/d/${shortCode}${tokenSuffix}`;
 
   const copyLink = () => {
     navigator.clipboard.writeText(shareUrl);
@@ -164,7 +124,7 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
           </div>
         </div>
 
-        <FilePreview mimeType={file.mime_type} downloadUrl={file.url} fileName={file.original_name} />
+        <FilePreview mimeType={file.mime_type} downloadUrl={previewUrl} fileName={file.original_name} />
 
         <div className="flex flex-wrap items-center gap-4 mt-6 text-xs text-slate-500 dark:text-slate-400">
           <span className="flex items-center gap-1">
@@ -183,16 +143,14 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
           </span>
         </div>
 
-        {downloadError && <p className="text-sm text-red-500 mt-3">{downloadError}</p>}
-
         <div className="flex flex-wrap items-center gap-3 mt-6">
-          <button
-            onClick={handleDownload}
-            disabled={downloading}
-            className="flex items-center gap-2 bg-brand hover:bg-brand-light text-white font-semibold rounded-xl px-6 py-2.5 transition disabled:opacity-60"
+          <a
+            href={downloadHref}
+            onClick={() => setDownloads((d) => d + 1)}
+            className="flex items-center gap-2 bg-brand hover:bg-brand-light text-white font-semibold rounded-xl px-6 py-2.5 transition"
           >
-            <Download size={16} /> {downloading ? "Preparing..." : "Download"}
-          </button>
+            <Download size={16} /> Download
+          </a>
 
           <button
             onClick={copyLink}
