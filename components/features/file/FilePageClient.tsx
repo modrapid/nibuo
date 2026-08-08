@@ -36,6 +36,7 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
   const [expired, setExpired] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [downloads, setDownloads] = useState(0);
+  const [downloading, setDownloading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -106,7 +107,14 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
 
   const tokenSuffix = token ? `?token=${encodeURIComponent(token)}` : "";
   const previewUrl = `${CDN_URL}/p/${shortCode}${tokenSuffix}`;
-  const downloadHref = `${CDN_URL}/d/${shortCode}${tokenSuffix}`;
+
+  const handleDownload = () => {
+    setDownloading(true);
+    const url = `${CDN_URL}/d/${shortCode}${tokenSuffix}`;
+    window.location.href = url;
+    setDownloads((d) => d + 1);
+    setTimeout(() => setDownloading(false), 1500);
+  };
 
   const copyLink = () => {
     navigator.clipboard.writeText(shareUrl);
@@ -144,13 +152,13 @@ export function FilePageClient({ shortCode, shareUrl }: FilePageClientProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mt-6">
-          <a
-            href={downloadHref}
-            onClick={() => setDownloads((d) => d + 1)}
-            className="flex items-center gap-2 bg-brand hover:bg-brand-light text-white font-semibold rounded-xl px-6 py-2.5 transition"
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="flex items-center gap-2 bg-brand hover:bg-brand-light text-white font-semibold rounded-xl px-6 py-2.5 transition disabled:opacity-60"
           >
-            <Download size={16} /> Download
-          </a>
+            <Download size={16} /> {downloading ? "Preparing..." : "Download"}
+          </button>
 
           <button
             onClick={copyLink}
